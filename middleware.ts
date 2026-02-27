@@ -1,8 +1,11 @@
-import { updateSession } from '@/lib/supabase/proxy'
-import { type NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  return await updateSession(request)
+// Simple middleware for protected routes
+export function middleware(request: NextRequest) {
+  // For now, let client-side handle auth redirects
+  // This can be enhanced later for server-side protection
+  return NextResponse.next()
 }
 
 export const config = {

@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/useAuth"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -41,6 +41,7 @@ interface Profile {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { user, isAuthenticated, signOut } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [productMembers, setProductMembers] = useState<ProductMember[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -54,19 +55,13 @@ export default function DashboardPage() {
   }, [])
 
   const loadData = async () => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    if (!isAuthenticated || !user) {
       router.push("/login")
       return
     }
 
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single()
+    const profileResponse = await fetch(`/api/profiles?userId=${user.id}`)
+    const { profile: profileData } = await profileResponse.json()
 
     if (!profileData?.username) {
       router.push("/claim")
@@ -75,32 +70,11 @@ export default function DashboardPage() {
 
     setProfile(profileData)
 
-    const { data: memberData } = await supabase
-      .from("product_members")
-      .select(`
-        id,
-        role,
-        product:products(id, name, slug, description)
-      `)
-      .eq("user_id", user.id)
+    const membersResponse = await fetch(`/api/product-members?userId=${user.id}`)
+    const { productMembers: memberData } = await membersResponse.json()
 
     if (memberData) {
-      // Load impact metrics for each product member
-      const membersWithMetrics = await Promise.all(
-        memberData.map(async (member) => {
-          const { data: metrics } = await supabase
-            .from("impact_metrics")
-            .select("*")
-            .eq("product_member_id", member.id)
-          
-          return {
-            ...member,
-            product: member.product as unknown as Product,
-            impact_metrics: metrics || []
-          }
-        })
-      )
-      setProductMembers(membersWithMetrics)
+      setProductMembers(memberData)
     }
 
     setIsLoading(false)
@@ -108,16 +82,20 @@ export default function DashboardPage() {
 
   const handleProfileUpdate = async (updates: Partial<Profile>) => {
     if (!profile) return
-    
-    setIsSaving(true)
-    const supabase = createClient()
-    
-    const { error } = await supabase
-      .from("profiles")
-      .update(updates)
-      .eq("id", profile.id)
 
-    if (!error) {
+    setIsSaving(true)
+
+    const response = await fetch('/api/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: profile.id,
+        ...updates,
+      }),
+    })
+
+    const result = await response.json()
+    if (!result.error) {
       setProfile({ ...profile, ...updates })
     }
     setIsSaving(false)
@@ -125,70 +103,25 @@ export default function DashboardPage() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!profile || !newProduct.name || !newProduct.role) return
+    if (!user || !newProduct.name || !newProduct.role) return
 
     setIsSaving(true)
-    const supabase = createClient()
 
-    // Create slug from name if not provided
-    const slug = newProduct.slug || newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    const response = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newProduct.name,
+        description: newProduct.description,
+        role: newProduct.role,
+        userId: user.id,
+        metrics: newMetrics,
+      }),
+    })
 
-    // Create or get product
-    let productId: string
-    const { data: existingProduct } = await supabase
-      .from("products")
-      .select("id")
-      .eq("slug", slug)
-      .single()
-
-    if (existingProduct) {
-      productId = existingProduct.id
-    } else {
-      const { data: newProductData, error: productError } = await supabase
-        .from("products")
-        .insert({
-          name: newProduct.name,
-          slug,
-          description: newProduct.description,
-          created_by: profile.id
-        })
-        .select("id")
-        .single()
-
-      if (productError || !newProductData) {
-        setIsSaving(false)
-        return
-      }
-      productId = newProductData.id
-    }
-
-    // Create product member
-    const { data: memberData, error: memberError } = await supabase
-      .from("product_members")
-      .insert({
-        user_id: profile.id,
-        product_id: productId,
-        role: newProduct.role
-      })
-      .select("id")
-      .single()
-
-    if (memberError || !memberData) {
-      setIsSaving(false)
-      return
-    }
-
-    // Add impact metrics
-    if (newMetrics.length > 0) {
-      await supabase
-        .from("impact_metrics")
-        .insert(
-          newMetrics.filter(m => m.label && m.value).map(m => ({
-            product_member_id: memberData.id,
-            label: m.label,
-            value: m.value
-          }))
-        )
+    const result = await response.json()
+    if (result.error) {
+      console.error('Failed to add product:', result.error)
     }
 
     // Reset form and reload
@@ -202,15 +135,15 @@ export default function DashboardPage() {
   const handleDeleteProduct = async (memberId: string) => {
     if (!confirm("Remove this product from your profile?")) return
 
-    const supabase = createClient()
-    await supabase.from("impact_metrics").delete().eq("product_member_id", memberId)
-    await supabase.from("product_members").delete().eq("id", memberId)
+    await fetch(`/api/products?memberId=${memberId}`, {
+      method: 'DELETE',
+    })
+
     loadData()
   }
 
   const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    await signOut()
     router.push("/")
   }
 

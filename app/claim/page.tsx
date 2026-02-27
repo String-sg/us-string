@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/useAuth"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -49,35 +49,27 @@ export default function ClaimPage() {
   const [isChecking, setIsChecking] = useState(false)
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [user, setUser] = useState<{ id: string; email: string; user_metadata: { full_name?: string; avatar_url?: string } } | null>(null)
+  const { user, isAuthenticated } = useAuth()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
+      if (!isAuthenticated || !user) {
         router.push("/login")
         return
       }
 
       // Check if user already has a username
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("id", user.id)
-        .single()
+      const response = await fetch(`/api/profiles?userId=${user.id}`)
+      const { profile } = await response.json()
 
       if (profile?.username) {
         router.push("/dashboard")
         return
       }
-
-      setUser(user as typeof user & { user_metadata: { full_name?: string; avatar_url?: string } })
     }
-    
+
     checkAuth()
-  }, [router])
+  }, [isAuthenticated, user, router])
 
   useEffect(() => {
     const checkUsername = async () => {
@@ -97,12 +89,8 @@ export default function ClaimPage() {
       setIsChecking(true)
       setError("")
 
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("username", username)
-        .single()
+      const response = await fetch(`/api/profiles?username=${username}`)
+      const { profile: data } = await response.json()
 
       setIsChecking(false)
       setIsAvailable(!data)
@@ -122,17 +110,18 @@ export default function ClaimPage() {
     if (!user || !isAvailable) return
 
     setIsSubmitting(true)
-    const supabase = createClient()
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
+    const response = await fetch('/api/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
         username,
-        name: user.user_metadata?.full_name || username,
-        avatar_url: user.user_metadata?.avatar_url || null,
-        claimed: true,
-      })
+      }),
+    })
+
+    const result = await response.json()
+    const error = result.error
 
     if (error) {
       setError("Failed to claim username. Please try again.")
@@ -143,7 +132,7 @@ export default function ClaimPage() {
     router.push("/dashboard")
   }
 
-  if (!user) {
+  if (!isAuthenticated || !user) {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <div className="font-mono text-muted-foreground">Loading...</div>

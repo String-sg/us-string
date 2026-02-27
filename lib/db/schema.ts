@@ -15,6 +15,7 @@ export const users = pgTable('users', {
   avatarUrl: text('avatar_url'),
   provider: text('provider').default('google').notNull(),
   role: text('role').default('user').notNull(),
+  isVerified: boolean('is_verified').default(false).notNull(), // For @moe.edu.sg users
   createdAt: timestamp('created_at').defaultNow().notNull(),
   lastLogin: timestamp('last_login'),
 });

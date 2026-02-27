@@ -1,6 +1,6 @@
 "use client"
 
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/useAuth"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -38,16 +38,15 @@ export default function AdminPage() {
     checkAdmin()
   }, [])
 
-  const checkAdmin = async () => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+  const { user, isAuthenticated } = useAuth()
 
-    if (!user) {
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
       router.push("/login")
       return
     }
 
-    // Check if user is admin - you can customize this check
+    // Check if user is admin
     if (user.email !== ADMIN_EMAIL && !user.email?.endsWith("@string.sg")) {
       router.push("/dashboard")
       return
@@ -55,56 +54,32 @@ export default function AdminPage() {
 
     setIsAdmin(true)
     loadData()
-  }
+  }, [isAuthenticated, user, router])
 
   const loadData = async () => {
-    const supabase = createClient()
-
-    // Load all profiles
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false })
-
-    setProfiles(profilesData || [])
-
-    // Load all product members with user and product info
-    const { data: membersData } = await supabase
-      .from("product_members")
-      .select(`
-        id,
-        role,
-        created_at,
-        user:profiles!product_members_user_id_fkey(username, name),
-        product:products(name, slug)
-      `)
-      .order("created_at", { ascending: false })
-
-    if (membersData) {
-      setProductMembers(membersData.map(m => ({
-        ...m,
-        user: m.user as unknown as { username: string; name: string },
-        product: m.product as unknown as { name: string; slug: string }
-      })))
+    try {
+      // For admin functionality, we'd need to create admin API endpoints
+      // For now, just load empty data
+      setProfiles([])
+      setProductMembers([])
+      setIsLoading(false)
+    } catch (error) {
+      console.error('Failed to load admin data:', error)
+      setIsLoading(false)
     }
-
-    setIsLoading(false)
   }
 
   const handleDeleteProfile = async (profileId: string) => {
     if (!confirm("Delete this profile? This will also delete all their products.")) return
-
-    const supabase = createClient()
-    await supabase.from("profiles").delete().eq("id", profileId)
+    // TODO: Implement admin delete API
+    console.log('Delete profile:', profileId)
     loadData()
   }
 
   const handleDeleteProductMember = async (memberId: string) => {
     if (!confirm("Remove this product claim?")) return
-
-    const supabase = createClient()
-    await supabase.from("impact_metrics").delete().eq("product_member_id", memberId)
-    await supabase.from("product_members").delete().eq("id", memberId)
+    // TODO: Implement admin delete API
+    console.log('Delete product member:', memberId)
     loadData()
   }
 

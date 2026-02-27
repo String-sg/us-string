@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+// Server component for profile pages
 import { notFound } from "next/navigation"
 import { Receipt, UnclaimedReceipt } from "@/components/receipt"
 import Link from "next/link"
@@ -10,13 +10,10 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { username } = await params
-  const supabase = await createClient()
-  
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name, tagline")
-    .eq("username", username)
-    .single()
+
+  // Fetch profile data from API
+  const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/profile/${username}`)
+  const { profile } = await response.json()
 
   if (!profile) {
     return {
@@ -38,22 +35,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ProfilePage({ params }: PageProps) {
   const { username } = await params
-  const supabase = await createClient()
 
   // Check for reserved words
   const RESERVED_ROUTES = [
     "login", "claim", "dashboard", "admin", "auth", "api"
   ]
-  
+
   if (RESERVED_ROUTES.includes(username)) {
     notFound()
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("username", username)
-    .single()
+  // Fetch profile data
+  const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/profile/${username}`)
+  const { profile, products } = await response.json()
 
   // Show unclaimed receipt if no profile
   if (!profile) {
@@ -74,42 +68,7 @@ export default async function ProfilePage({ params }: PageProps) {
     )
   }
 
-  // Get products for this user
-  const { data: productMembers } = await supabase
-    .from("product_members")
-    .select(`
-      id,
-      role,
-      product:products(id, name, slug, description)
-    `)
-    .eq("user_id", profile.id)
-
-  // Get impact metrics and team counts for each product
-  const products = await Promise.all(
-    (productMembers || []).map(async (pm) => {
-      const { data: metrics } = await supabase
-        .from("impact_metrics")
-        .select("*")
-        .eq("product_member_id", pm.id)
-
-      // Get team count for this product
-      const product = pm.product as unknown as { id: string; name: string; slug: string; description?: string }
-      const { count } = await supabase
-        .from("product_members")
-        .select("*", { count: "exact", head: true })
-        .eq("product_id", product.id)
-
-      return {
-        id: pm.id,
-        name: product.name,
-        slug: product.slug,
-        description: product.description,
-        role: pm.role,
-        impact_metrics: metrics || [],
-        team_count: count || 1,
-      }
-    })
-  )
+  // Products are already fetched from the API
 
   return (
     <main className="min-h-screen flex flex-col">
