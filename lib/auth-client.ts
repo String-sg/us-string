@@ -200,7 +200,9 @@ export class AuthClient {
 
   async signOut(): Promise<void> {
     this.user = null;
-    localStorage.removeItem('string-auth-user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('string-auth-user');
+    }
     this.notifyListeners();
   }
 
@@ -213,4 +215,21 @@ export class AuthClient {
   }
 }
 
-export const auth = AuthClient.getInstance();
+// Export a function that safely gets the auth instance
+export const getAuth = () => {
+  if (typeof window === 'undefined') {
+    // Return a mock auth client for SSR
+    return {
+      onAuthStateChange: () => () => {},
+      getCurrentUser: () => null,
+      isAuthenticated: () => false,
+      signIn: async () => {},
+      signOut: async () => {},
+      setUser: () => {}
+    } as any;
+  }
+  return AuthClient.getInstance();
+};
+
+// Legacy export for backwards compatibility
+export const auth = getAuth();
