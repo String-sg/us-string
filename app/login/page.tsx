@@ -107,7 +107,9 @@ export default function LoginPage() {
       }
 
       // Update local auth state
-      localStorage.setItem('string-auth-user', JSON.stringify(user))
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('string-auth-user', JSON.stringify(user))
+      }
       router.push('/claim')
     } catch (error) {
       console.error('Failed to process Google credential:', error)
